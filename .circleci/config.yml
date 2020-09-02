@@ -658,6 +658,6 @@ workflows:
 #            - jslint
           filters:
             branches:
-              ignore: /.*/
-            tags:
-              only: /^v9.9.9$/
+              only: /^gs-build-test$/
+ #           tags:
+ #             only: /^v9.9.9$/
