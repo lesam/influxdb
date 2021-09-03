@@ -54,3 +54,5 @@ require (
 	golang.org/x/tools v0.0.0-20210106214847-113979e3529a
 	google.golang.org/grpc v1.29.1
 )
+
+replace github.com/influxdata/influxql => /Users/sarnold/influx/influxql
