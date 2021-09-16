@@ -111,6 +111,10 @@ func (h *RestoreHandler) handleRestoreKVStore(w http.ResponseWriter, r *http.Req
 		h.HandleHTTPError(ctx, err, w)
 		return
 	}
+
+	res := backup.RestoreKVResponse{Token: "mytoken"}
+	h.api.Respond(w, r, http.StatusOK, res)
+
 }
 
 func (h *RestoreHandler) handleRestoreSqlStore(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +164,13 @@ func (h *RestoreHandler) handleRestoreBucket(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	shardIDMap, err := h.RestoreService.RestoreBucket(ctx, bucketID, buf)
+	var dbi meta.DatabaseInfo
+	if err := dbi.UnmarshalBinary(buf); err != nil {
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+
+	shardIDMap, err := h.RestoreService.RestoreBucket(ctx, bucketID, dbi)
 	if err != nil {
 		h.HandleHTTPError(ctx, err, w)
 		return
@@ -209,18 +219,8 @@ func (h *RestoreHandler) handleRestoreBucketMetadata(w http.ResponseWriter, r *h
 	}
 
 	// Restore shard-level metadata for the new bucket.
-	// TODO: It's silly to marshal the DBI into binary here only to unmarshal it again within
-	//  the RestoreService, but it's the easiest way to share code with the 2.0.x restore API
-	//  and avoid introducing a circular dependency on the `meta` package.
-	//  When we reach a point where we feel comfortable deleting the 2.0.x endpoints, consider
-	//  refactoring this to pass a struct directly instead of the marshalled bytes.
 	dbi := manifestToDbInfo(b)
-	rawDbi, err := dbi.MarshalBinary()
-	if err != nil {
-		h.api.Err(w, r, err)
-		return
-	}
-	shardIDMap, err := h.RestoreService.RestoreBucket(ctx, bkt.ID, rawDbi)
+	shardIDMap, err := h.RestoreService.RestoreBucket(ctx, bkt.ID, dbi)
 	if err != nil {
 		h.Logger.Warn("Cleaning up after failed bucket-restore", zap.String("bucket_id", bkt.ID.String()))
 		if err2 := h.BucketService.DeleteBucket(ctx, bkt.ID); err2 != nil {

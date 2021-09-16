@@ -9,10 +9,6 @@ import (
 	"github.com/influxdata/influxdb/v2/v1/services/meta"
 )
 
-const (
-	BackupFilenamePattern = "20060102T150405Z"
-)
-
 // BackupService represents the data backup functions of InfluxDB.
 type BackupService interface {
 	// BackupKVStore creates a live backup copy of the metadata database.
@@ -50,14 +46,11 @@ type BucketManifestWriter interface {
 // RestoreService represents the data restore functions of InfluxDB.
 type RestoreService interface {
 	// RestoreKVStore restores & replaces metadata database.
+	// It returns the new metadata after the restore completes
 	RestoreKVStore(ctx context.Context, r io.Reader) error
 
 	// RestoreBucket restores storage metadata for a bucket.
-	// TODO(danmoran): As far as I can tell, dbInfo is typed as a []byte because typing it as
-	//  a meta.DatabaseInfo introduces a circular dependency between the root package and `meta`.
-	//  We should refactor to make this signature easier to use. It might be easier to wait
-	//  until we're ready to delete the 2.0.x restore APIs before refactoring.
-	RestoreBucket(ctx context.Context, id platform.ID, dbInfo []byte) (shardIDMap map[uint64]uint64, err error)
+	RestoreBucket(ctx context.Context, id platform.ID, info meta.DatabaseInfo) (shardIDMap map[uint64]uint64, err error)
 
 	// RestoreShard uploads a backup file for a single shard.
 	RestoreShard(ctx context.Context, shardID uint64, r io.Reader) error
@@ -136,6 +129,10 @@ type RestoredBucketMappings struct {
 	ID            platform.ID            `json:"id"`
 	Name          string                 `json:"name"`
 	ShardMappings []RestoredShardMapping `json:"shardMappings"`
+}
+
+type RestoreKVResponse struct {
+	Token string `json:"token"`
 }
 
 type RestoredShardMapping struct {
