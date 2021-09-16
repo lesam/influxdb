@@ -14,6 +14,7 @@ import (
 	"github.com/influxdata/influxdb/v2/kit/platform/errors"
 	"github.com/influxdata/influxdb/v2/kit/tracing"
 	kithttp "github.com/influxdata/influxdb/v2/kit/transport/http"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 	"github.com/influxdata/influxdb/v2/v1/services/meta"
 	"go.uber.org/zap"
 )
@@ -23,8 +24,8 @@ type RestoreBackend struct {
 	Logger *zap.Logger
 	errors.HTTPErrorHandler
 
-	RestoreService          influxdb.RestoreService
-	SqlBackupRestoreService influxdb.SqlBackupRestoreService
+	RestoreService          backup.RestoreService
+	SqlBackupRestoreService backup.SqlBackupRestoreService
 	BucketService           influxdb.BucketService
 }
 
@@ -47,8 +48,8 @@ type RestoreHandler struct {
 	errors.HTTPErrorHandler
 	Logger *zap.Logger
 
-	RestoreService          influxdb.RestoreService
-	SqlBackupRestoreService influxdb.SqlBackupRestoreService
+	RestoreService          backup.RestoreService
+	SqlBackupRestoreService backup.SqlBackupRestoreService
 	BucketService           influxdb.BucketService
 }
 
@@ -176,7 +177,7 @@ func (h *RestoreHandler) handleRestoreBucketMetadata(w http.ResponseWriter, r *h
 	defer span.Finish()
 	ctx := r.Context()
 
-	var b influxdb.BucketMetadataManifest
+	var b backup.BucketMetadataManifest
 	if err := h.api.DecodeJSON(r.Body, &b); err != nil {
 		h.api.Err(w, r, err)
 		return
@@ -230,20 +231,20 @@ func (h *RestoreHandler) handleRestoreBucketMetadata(w http.ResponseWriter, r *h
 		return
 	}
 
-	res := influxdb.RestoredBucketMappings{
+	res := backup.RestoredBucketMappings{
 		ID:            bkt.ID,
 		Name:          bkt.Name,
-		ShardMappings: make([]influxdb.RestoredShardMapping, 0, len(shardIDMap)),
+		ShardMappings: make([]backup.RestoredShardMapping, 0, len(shardIDMap)),
 	}
 
 	for old, new := range shardIDMap {
-		res.ShardMappings = append(res.ShardMappings, influxdb.RestoredShardMapping{OldId: old, NewId: new})
+		res.ShardMappings = append(res.ShardMappings, backup.RestoredShardMapping{OldId: old, NewId: new})
 	}
 
 	h.api.Respond(w, r, http.StatusCreated, res)
 }
 
-func manifestToDbInfo(m influxdb.BucketMetadataManifest) meta.DatabaseInfo {
+func manifestToDbInfo(m backup.BucketMetadataManifest) meta.DatabaseInfo {
 	dbi := meta.DatabaseInfo{
 		Name:                   m.BucketName,
 		DefaultRetentionPolicy: m.DefaultRetentionPolicy,
@@ -256,7 +257,7 @@ func manifestToDbInfo(m influxdb.BucketMetadataManifest) meta.DatabaseInfo {
 	return dbi
 }
 
-func manifestToRpInfo(m influxdb.RetentionPolicyManifest) meta.RetentionPolicyInfo {
+func manifestToRpInfo(m backup.RetentionPolicyManifest) meta.RetentionPolicyInfo {
 	rpi := meta.RetentionPolicyInfo{
 		Name:               m.Name,
 		ReplicaN:           m.ReplicaN,
@@ -280,7 +281,7 @@ func manifestToRpInfo(m influxdb.RetentionPolicyManifest) meta.RetentionPolicyIn
 	return rpi
 }
 
-func manifestToSgInfo(m influxdb.ShardGroupManifest) meta.ShardGroupInfo {
+func manifestToSgInfo(m backup.ShardGroupManifest) meta.ShardGroupInfo {
 	var delAt, truncAt time.Time
 	if m.DeletedAt != nil {
 		delAt = *m.DeletedAt
@@ -304,7 +305,7 @@ func manifestToSgInfo(m influxdb.ShardGroupManifest) meta.ShardGroupInfo {
 	return sgi
 }
 
-func manifestToShardInfo(m influxdb.ShardManifest) meta.ShardInfo {
+func manifestToShardInfo(m backup.ShardManifest) meta.ShardInfo {
 	si := meta.ShardInfo{
 		ID:     m.ID,
 		Owners: make([]meta.ShardOwner, len(m.ShardOwners)),

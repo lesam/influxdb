@@ -1,4 +1,4 @@
-package influxdb
+package backup
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/influxdata/influxdb/v2/kit/platform"
+	"github.com/influxdata/influxdb/v2/v1/services/meta"
 )
 
 const (

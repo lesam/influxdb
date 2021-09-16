@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/influxdata/influxdb/v2"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 	"github.com/influxdata/influxdb/v2/tenant"
 	"github.com/influxdata/influxdb/v2/v1/services/meta"
 )
@@ -31,7 +32,7 @@ func (b BucketManifestWriter) WriteManifest(ctx context.Context, w io.Writer) er
 		return err
 	}
 
-	l := make([]influxdb.BucketMetadataManifest, 0, len(bkts))
+	l := make([]backup.BucketMetadataManifest, 0, len(bkts))
 
 	for _, bkt := range bkts {
 		org, err := b.ts.OrganizationService.FindOrganizationByID(ctx, bkt.OrgID)
@@ -46,7 +47,7 @@ func (b BucketManifestWriter) WriteManifest(ctx context.Context, w io.Writer) er
 			description = &bkt.Description
 		}
 
-		l = append(l, influxdb.BucketMetadataManifest{
+		l = append(l, backup.BucketMetadataManifest{
 			OrganizationID:         bkt.OrgID,
 			OrganizationName:       org.Name,
 			BucketID:               bkt.ID,
@@ -62,11 +63,11 @@ func (b BucketManifestWriter) WriteManifest(ctx context.Context, w io.Writer) er
 
 // retentionPolicyToManifest and the various similar functions that follow are for converting
 // from the structs in the meta package to the manifest structs
-func retentionPolicyToManifest(meta []meta.RetentionPolicyInfo) []influxdb.RetentionPolicyManifest {
-	r := make([]influxdb.RetentionPolicyManifest, 0, len(meta))
+func retentionPolicyToManifest(meta []meta.RetentionPolicyInfo) []backup.RetentionPolicyManifest {
+	r := make([]backup.RetentionPolicyManifest, 0, len(meta))
 
 	for _, m := range meta {
-		r = append(r, influxdb.RetentionPolicyManifest{
+		r = append(r, backup.RetentionPolicyManifest{
 			Name:               m.Name,
 			ReplicaN:           m.ReplicaN,
 			Duration:           m.Duration,
@@ -79,18 +80,18 @@ func retentionPolicyToManifest(meta []meta.RetentionPolicyInfo) []influxdb.Reten
 	return r
 }
 
-func subscriptionInfosToManifest(subInfos []meta.SubscriptionInfo) []influxdb.SubscriptionManifest {
-	r := make([]influxdb.SubscriptionManifest, 0, len(subInfos))
+func subscriptionInfosToManifest(subInfos []meta.SubscriptionInfo) []backup.SubscriptionManifest {
+	r := make([]backup.SubscriptionManifest, 0, len(subInfos))
 
 	for _, s := range subInfos {
-		r = append(r, influxdb.SubscriptionManifest(s))
+		r = append(r, backup.SubscriptionManifest(s))
 	}
 
 	return r
 }
 
-func shardGroupToManifest(shardGroups []meta.ShardGroupInfo) []influxdb.ShardGroupManifest {
-	r := make([]influxdb.ShardGroupManifest, 0, len(shardGroups))
+func shardGroupToManifest(shardGroups []meta.ShardGroupInfo) []backup.ShardGroupManifest {
+	r := make([]backup.ShardGroupManifest, 0, len(shardGroups))
 
 	for _, s := range shardGroups {
 		deletedAt := &s.DeletedAt
@@ -106,7 +107,7 @@ func shardGroupToManifest(shardGroups []meta.ShardGroupInfo) []influxdb.ShardGro
 			truncatedAt = nil
 		}
 
-		r = append(r, influxdb.ShardGroupManifest{
+		r = append(r, backup.ShardGroupManifest{
 			ID:          s.ID,
 			StartTime:   s.StartTime,
 			EndTime:     s.EndTime,
@@ -119,11 +120,11 @@ func shardGroupToManifest(shardGroups []meta.ShardGroupInfo) []influxdb.ShardGro
 	return r
 }
 
-func shardInfosToManifest(shards []meta.ShardInfo) []influxdb.ShardManifest {
-	r := make([]influxdb.ShardManifest, 0, len(shards))
+func shardInfosToManifest(shards []meta.ShardInfo) []backup.ShardManifest {
+	r := make([]backup.ShardManifest, 0, len(shards))
 
 	for _, s := range shards {
-		r = append(r, influxdb.ShardManifest{
+		r = append(r, backup.ShardManifest{
 			ID:          s.ID,
 			ShardOwners: shardOwnersToManifest(s.Owners),
 		})
@@ -132,11 +133,11 @@ func shardInfosToManifest(shards []meta.ShardInfo) []influxdb.ShardManifest {
 	return r
 }
 
-func shardOwnersToManifest(shardOwners []meta.ShardOwner) []influxdb.ShardOwner {
-	r := make([]influxdb.ShardOwner, 0, len(shardOwners))
+func shardOwnersToManifest(shardOwners []meta.ShardOwner) []backup.ShardOwner {
+	r := make([]backup.ShardOwner, 0, len(shardOwners))
 
 	for _, s := range shardOwners {
-		r = append(r, influxdb.ShardOwner(s))
+		r = append(r, backup.ShardOwner(s))
 	}
 
 	return r

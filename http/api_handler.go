@@ -16,6 +16,7 @@ import (
 	"github.com/influxdata/influxdb/v2/kit/platform/errors"
 	"github.com/influxdata/influxdb/v2/kit/prom"
 	kithttp "github.com/influxdata/influxdb/v2/kit/transport/http"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 	"github.com/influxdata/influxdb/v2/query"
 	"github.com/influxdata/influxdb/v2/query/fluxlang"
 	"github.com/influxdata/influxdb/v2/static"
@@ -64,10 +65,10 @@ type APIBackend struct {
 
 	PointsWriter                    storage.PointsWriter
 	DeleteService                   influxdb.DeleteService
-	BackupService                   influxdb.BackupService
-	SqlBackupRestoreService         influxdb.SqlBackupRestoreService
-	BucketManifestWriter            influxdb.BucketManifestWriter
-	RestoreService                  influxdb.RestoreService
+	BackupService                   backup.BackupService
+	SqlBackupRestoreService         backup.SqlBackupRestoreService
+	BucketManifestWriter            backup.BucketManifestWriter
+	RestoreService                  backup.RestoreService
 	AuthorizationService            influxdb.AuthorizationService
 	AuthorizationV1Service          influxdb.AuthorizationService
 	PasswordV1Service               influxdb.PasswordsService

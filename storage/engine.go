@@ -398,7 +398,7 @@ func (e *Engine) RestoreKVStore(ctx context.Context, r io.Reader) error {
 	return nil
 }
 
-func (e *Engine) RestoreBucket(ctx context.Context, id platform.ID, buf []byte) (map[uint64]uint64, error) {
+func (e *Engine) RestoreBucket(ctx context.Context, id platform.ID, newDBI meta.DatabaseInfo) (map[uint64]uint64, error) {
 	span, _ := tracing.StartSpanFromContext(ctx)
 	defer span.Finish()
 
@@ -407,11 +407,6 @@ func (e *Engine) RestoreBucket(ctx context.Context, id platform.ID, buf []byte) 
 
 	if e.closing == nil {
 		return nil, ErrEngineClosed
-	}
-
-	var newDBI meta.DatabaseInfo
-	if err := newDBI.UnmarshalBinary(buf); err != nil {
-		return nil, err
 	}
 
 	data := e.metaClient.Data()

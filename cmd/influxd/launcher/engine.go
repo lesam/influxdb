@@ -13,7 +13,9 @@ import (
 	"github.com/influxdata/influxdb/v2/kit/platform"
 	"github.com/influxdata/influxdb/v2/kit/prom"
 	"github.com/influxdata/influxdb/v2/models"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 	"github.com/influxdata/influxdb/v2/storage"
+	"github.com/influxdata/influxdb/v2/v1/services/meta"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 )
@@ -27,8 +29,8 @@ type Engine interface {
 	storage.PointsWriter
 	storage.EngineSchema
 	prom.PrometheusCollector
-	influxdb.BackupService
-	influxdb.RestoreService
+	backup.BackupService
+	backup.RestoreService
 
 	SeriesCardinality(ctx context.Context, bucketID platform.ID) int64
 
@@ -175,7 +177,7 @@ func (t *TemporaryEngine) RestoreKVStore(ctx context.Context, r io.Reader) error
 	return t.engine.RestoreKVStore(ctx, r)
 }
 
-func (t *TemporaryEngine) RestoreBucket(ctx context.Context, id platform.ID, dbi []byte) (map[uint64]uint64, error) {
+func (t *TemporaryEngine) RestoreBucket(ctx context.Context, id platform.ID, dbi meta.DatabaseInfo) (map[uint64]uint64, error) {
 	return t.engine.RestoreBucket(ctx, id, dbi)
 }
 

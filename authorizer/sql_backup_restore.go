@@ -6,18 +6,19 @@ import (
 
 	"github.com/influxdata/influxdb/v2"
 	"github.com/influxdata/influxdb/v2/kit/tracing"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 )
 
-var _ influxdb.SqlBackupRestoreService = (*SqlBackupRestoreService)(nil)
+var _ backup.SqlBackupRestoreService = (*SqlBackupRestoreService)(nil)
 
 // SqlBackupRestoreService wraps a influxdb.SqlBackupRestoreService and authorizes actions
 // against it appropriately.
 type SqlBackupRestoreService struct {
-	s influxdb.SqlBackupRestoreService
+	s backup.SqlBackupRestoreService
 }
 
 // NewSqlBackupRestoreService constructs an instance of an authorizing backup service.
-func NewSqlBackupRestoreService(s influxdb.SqlBackupRestoreService) *SqlBackupRestoreService {
+func NewSqlBackupRestoreService(s backup.SqlBackupRestoreService) *SqlBackupRestoreService {
 	return &SqlBackupRestoreService{
 		s: s,
 	}

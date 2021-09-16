@@ -49,6 +49,7 @@ import (
 	endpointservice "github.com/influxdata/influxdb/v2/notification/endpoint/service"
 	ruleservice "github.com/influxdata/influxdb/v2/notification/rule/service"
 	"github.com/influxdata/influxdb/v2/pkger"
+	backup2 "github.com/influxdata/influxdb/v2/platform/backup"
 	infprom "github.com/influxdata/influxdb/v2/prometheus"
 	"github.com/influxdata/influxdb/v2/query"
 	"github.com/influxdata/influxdb/v2/query/control"
@@ -324,10 +325,10 @@ func (m *Launcher) run(ctx context.Context, opts *InfluxdOpts) (err error) {
 	m.reg.MustRegister(m.engine.PrometheusCollectors()...)
 
 	var (
-		deleteService  platform.DeleteService  = m.engine
-		pointsWriter   storage.PointsWriter    = m.engine
-		backupService  platform.BackupService  = m.engine
-		restoreService platform.RestoreService = m.engine
+		deleteService  platform.DeleteService = m.engine
+		pointsWriter   storage.PointsWriter   = m.engine
+		backupService  backup2.BackupService  = m.engine
+		restoreService backup2.RestoreService = m.engine
 	)
 
 	deps, err := influxdb.NewDependencies(

@@ -7,18 +7,19 @@ import (
 
 	"github.com/influxdata/influxdb/v2"
 	"github.com/influxdata/influxdb/v2/kit/tracing"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 )
 
-var _ influxdb.BackupService = (*BackupService)(nil)
+var _ backup.BackupService = (*BackupService)(nil)
 
 // BackupService wraps a influxdb.BackupService and authorizes actions
 // against it appropriately.
 type BackupService struct {
-	s influxdb.BackupService
+	s backup.BackupService
 }
 
 // NewBackupService constructs an instance of an authorizing backup service.
-func NewBackupService(s influxdb.BackupService) *BackupService {
+func NewBackupService(s backup.BackupService) *BackupService {
 	return &BackupService{
 		s: s,
 	}

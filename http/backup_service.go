@@ -14,6 +14,7 @@ import (
 	"github.com/influxdata/influxdb/v2/authorizer"
 	"github.com/influxdata/influxdb/v2/kit/platform/errors"
 	"github.com/influxdata/influxdb/v2/kit/tracing"
+	"github.com/influxdata/influxdb/v2/platform/backup"
 	"go.uber.org/zap"
 )
 
@@ -22,9 +23,9 @@ type BackupBackend struct {
 	Logger *zap.Logger
 	errors.HTTPErrorHandler
 
-	BackupService           influxdb.BackupService
-	SqlBackupRestoreService influxdb.SqlBackupRestoreService
-	BucketManifestWriter    influxdb.BucketManifestWriter
+	BackupService           backup.BackupService
+	SqlBackupRestoreService backup.SqlBackupRestoreService
+	BucketManifestWriter    backup.BucketManifestWriter
 }
 
 // NewBackupBackend returns a new instance of BackupBackend.
@@ -45,9 +46,9 @@ type BackupHandler struct {
 	errors.HTTPErrorHandler
 	Logger *zap.Logger
 
-	BackupService           influxdb.BackupService
-	SqlBackupRestoreService influxdb.SqlBackupRestoreService
-	BucketManifestWriter    influxdb.BucketManifestWriter
+	BackupService           backup.BackupService
+	SqlBackupRestoreService backup.SqlBackupRestoreService
+	BucketManifestWriter    backup.BucketManifestWriter
 }
 
 const (
