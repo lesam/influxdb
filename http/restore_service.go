@@ -27,6 +27,7 @@ type RestoreBackend struct {
 	RestoreService          backup.RestoreService
 	SqlBackupRestoreService backup.SqlBackupRestoreService
 	BucketService           influxdb.BucketService
+	AuthorizationService	influxdb.AuthorizationService
 }
 
 // NewRestoreBackend returns a new instance of RestoreBackend.
@@ -38,6 +39,7 @@ func NewRestoreBackend(b *APIBackend) *RestoreBackend {
 		RestoreService:          b.RestoreService,
 		SqlBackupRestoreService: b.SqlBackupRestoreService,
 		BucketService:           b.BucketService,
+		AuthorizationService: b.AuthorizationService,
 	}
 }
 
@@ -51,6 +53,7 @@ type RestoreHandler struct {
 	RestoreService          backup.RestoreService
 	SqlBackupRestoreService backup.SqlBackupRestoreService
 	BucketService           influxdb.BucketService
+	AuthorizationService	influxdb.AuthorizationService
 }
 
 const (
@@ -73,6 +76,7 @@ func NewRestoreHandler(b *RestoreBackend) *RestoreHandler {
 		RestoreService:          b.RestoreService,
 		SqlBackupRestoreService: b.SqlBackupRestoreService,
 		BucketService:           b.BucketService,
+		AuthorizationService: b.AuthorizationService,
 		api:                     kithttp.NewAPI(kithttp.WithLog(b.Logger)),
 	}
 
@@ -112,9 +116,47 @@ func (h *RestoreHandler) handleRestoreKVStore(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	res := backup.RestoreKVResponse{Token: "mytoken"}
-	h.api.Respond(w, r, http.StatusOK, res)
+	auths, _, err := h.AuthorizationService.FindAuthorizations(ctx, influxdb.AuthorizationFilter{}, influxdb.FindOptions{})
+	if err != nil {
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
 
+	var operator *influxdb.Authorization	
+	for _, auth := range auths {
+		h.Logger.Info("Found token: " + auth.Token)
+		pset, err := auth.PermissionSet()
+		if err != nil {
+			h.HandleHTTPError(ctx, err, w)
+			return
+		}
+		isOperator := true
+		for _, p := range influxdb.OperPermissions() {
+			if !pset.Allowed(p) {
+				isOperator = false
+				break
+			}
+		}
+		if !auth.IsActive() {
+			isOperator = false
+		}
+		if isOperator {
+			operator = auth
+			break
+		}
+	}
+	
+	if operator == nil {
+		err := &errors.Error{
+			Code: errors.EInternal,
+			Msg:  "cannot find active operator token in backup",
+		}
+		h.HandleHTTPError(ctx, err, w)
+		return
+	}
+
+	res := backup.RestoreKVResponse{Token: operator.Token}
+	h.api.Respond(w, r, http.StatusOK, res)
 }
 
 func (h *RestoreHandler) handleRestoreSqlStore(w http.ResponseWriter, r *http.Request) {
