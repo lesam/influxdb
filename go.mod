@@ -106,7 +106,7 @@ require (
 	github.com/influxdata/cron v0.0.0-20201006132531-4bb0a200dcbe
 	github.com/influxdata/flux v0.130.0
 	github.com/influxdata/httprouter v1.3.1-0.20191122104820-ee83e2772f69
-	github.com/influxdata/influx-cli/v2 v2.1.1-0.20210813175002-13799e7662c0
+	github.com/influxdata/influx-cli/v2 v2.1.1-0.20211007120850-534456acd9f2
 	github.com/influxdata/influxdb-client-go/v2 v2.3.1-0.20210518120617-5d1fff431040 // indirect
 	github.com/influxdata/influxql v0.0.0-20180925231337-1cbfca8e56b6
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
@@ -215,14 +215,5 @@ require (
 	honnef.co/go/tools v0.2.0
 	labix.org/v2/mgo v0.0.0-20140701140051-000000000287 // indirect
 )
-
-// Arrow has been taking too long to merge our PR that addresses some checkptr fixes.
-// We are using our own fork, which specifically applies the change in
-// https://github.com/apache/arrow/pull/8112, on top of the commit of Arrow that flux uses.
-//
-// The next time Flux updates its Arrow dependency, we will see checkptr test failures,
-// if that version does not include PR 8112. In that event, someone (perhaps Mark R again)
-// will need to apply the change in 8112 on top of the newer version of Arrow.
-replace github.com/apache/arrow/go/arrow v0.0.0-20191024131854-af6fa24be0db => github.com/influxdata/arrow/go/arrow v0.0.0-20200917142114-986e413c1705
 
 replace github.com/nats-io/nats-streaming-server v0.11.2 => github.com/influxdata/nats-streaming-server v0.11.3-0.20201112040610-c277f7560803
