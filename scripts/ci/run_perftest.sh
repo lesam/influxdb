@@ -179,7 +179,7 @@ curl -XPOST -H "Authorization: Token ${TEST_TOKEN}" \
 bulk_data_file_loader() {
   local data_fname="influx-bulk-records-usecase-$test_name"
   # Note -scale-var=1000 implies cardinality of 1MM
-  dry_out $GOPATH/bin/bulk_data_gen \
+  $GOPATH/bin/bulk_data_gen \
       -seed=$TEST_COMMIT_TIME \
       -use-case=$test_name \
       -scale-var=1000 \
@@ -192,7 +192,7 @@ bulk_data_file_loader() {
     influxdb2_opts="-organization=$TEST_ORG -token=$TEST_TOKEN"
   fi
 
-  dry_out $GOPATH/bin/bulk_load_influx \
+  $GOPATH/bin/bulk_load_influx \
     -file=${USECASE_DIR}/$data_fname \
     -batch-size=5000 \
     -workers=4 \
@@ -204,16 +204,13 @@ bulk_data_file_loader() {
     $influxdb2_opts | \
     jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", use_case: \"$test_name\"}" > "$working_dir/test-ingest-$test_name.json"
 
-  if [[ -z "$DRY_RUN" ]] ; then
-    # Cleanup from the data generation and loading.
-    force_compaction
+  # Cleanup from the data generation and loading.
+  force_compaction
 
-    # Generate a DBRP mapping for use by InfluxQL queries.
-    create_dbrp
+  # Generate a DBRP mapping for use by InfluxQL queries.
+  create_dbrp
 
-    rm ${USECASE_DIR}/$data_fname
-  fi
-
+  rm ${USECASE_DIR}/$data_fname
 }
 
 build_query_file() {
@@ -224,7 +221,7 @@ build_query_file() {
 
   local query_file="${format}_${query_usecase}_${type}"
   local scale_var=1000
-  dry_out $GOPATH/bin/bulk_query_gen \
+  $GOPATH/bin/bulk_query_gen \
     -use-case=$query_usecase \
     -query-type=$type \
     -format=influx-"$format" \
@@ -238,7 +235,7 @@ build_query_file() {
   # since individual queries can take a long time.
   duration=30s
 
-  dry_out ${GOPATH}/bin/query_benchmarker_influxdb \
+  ${GOPATH}/bin/query_benchmarker_influxdb \
     -file=${USECASE_DIR}/$query_file \
     -urls=http://${NGINX_HOST}:8086 \
     -debug=0 \
@@ -256,15 +253,7 @@ build_query_file() {
   rm ${USECASE_DIR}/$query_file
 
   # Restart daemon between query tests.
-  dry_out systemctl restart influxdb
-}
-
-dry_out() {
-  if [[ -n "$DRY_RUN" ]] ; then
-    echo "DRY RUN: $@" >&3
-  else
-    "$@"
-  fi
+  systemctl restart influxdb
 }
 
 run_dataset() {
@@ -303,7 +292,7 @@ run_dataset() {
   done
 
   # Delete DB to start anew.
-  dry_out curl -X DELETE -H "Authorization: Token ${TEST_TOKEN}" http://${NGINX_HOST}:8086/api/v2/buckets/$(bucket_id)
+  curl -X DELETE -H "Authorization: Token ${TEST_TOKEN}" http://${NGINX_HOST}:8086/api/v2/buckets/$(bucket_id)
   rm -rf "$USECASE_DIR"
 }
 
@@ -312,43 +301,16 @@ run_dataset() {
 ## Setup for perf tests ##
 ##########################
 
-DRY_RUN=
-while true; do
-  case $1 in
-    -d | --dry-run )
-      DRY_RUN=true
-      shift
-      ;;
-    *)
-      break ;;
-  esac
-done
-
 working_dir=$(mktemp -d)
 
-if [[ -z "DRY_RUN" ]] ; then
-  DATASET_DIR=/mnt/ramdisk
-  mkdir -p "$DATASET_DIR"
-  mount -t tmpfs -o size=32G tmpfs "$DATASET_DIR"
+DATASET_DIR=/mnt/ramdisk
+mkdir -p "$DATASET_DIR"
+mount -t tmpfs -o size=32G tmpfs "$DATASET_DIR"
 
-  install_influxdb
-  install_telegraf
-  install_go
-  install_influxdb_comparisons
-else
-  # The intention of the dry run is to be able to run something like the following command:
-  #
-  # TEST_TOKEN=mytoken NGINX_HOST=somehost TEST_ORG=foo GOPATH=/go/path ./scripts/ci/run_perftest.sh -d 2>/dev/null
-  #
-  # And have a repeatable output to test script refactoring quickly
-
-  tmpdir="$(dirname "$working_dir")"
-  DATASET_DIR="$tmpdir/perftest_dataset_dir"
-  working_dir="$tmpdir/perftest_working_dir"
-  mkdir "$DATASET_DIR"
-  mkdir "$working_dir"
-  exec 3>&1
-fi
+install_influxdb
+install_telegraf
+install_go
+install_influxdb_comparisons
 
 # Common variables used across all tests
 db_name="benchmark_db"
@@ -363,16 +325,10 @@ for file in "$SCRIPT_DIR"/perf-tests/* ; do
   run_dataset $file
 done
 
-if [[ -z "DRY_RUN" ]] ; then
-  echo "Using Telegraph to report results from the following files:"
-  ls $working_dir
-  if [[ "${TEST_RECORD_RESULTS}" = "true" ]] ; then
-    telegraf --debug --once
-  else
-    telegraf --debug --test
-  fi
+echo "Using Telegraph to report results from the following files:"
+ls $working_dir
+if [[ "${TEST_RECORD_RESULTS}" = "true" ]] ; then
+  telegraf --debug --once
 else
-  # For the dry run we pick deterministic names for the directories, so delete them
-  rm -rf "$DATASET_DIR"
-  rm -rf "$working_dir"
+  telegraf --debug --test
 fi
