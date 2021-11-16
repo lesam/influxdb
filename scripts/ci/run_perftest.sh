@@ -155,49 +155,6 @@ force_compaction() {
   systemctl start influxdb
 }
 
-query_types() {
-  case $1 in
-    window-agg|group-agg|bare-agg|ungrouped-agg|group-window-transpose-low-card|group-window-transpose-high-card)
-      echo min mean max first last count sum
-      ;;
-    iot)
-      echo fast-query-small-data standalone-filter aggregate-keep aggregate-drop sorted-pivot
-      ;;
-    metaquery)
-      echo field-keys tag-values cardinality
-      ;;
-    multi-measurement)
-      echo multi-measurement-or
-      ;;
-    *)
-      echo "unknown use-case: $1"
-      exit 1
-      ;;
-  esac
-}
-
-# Many of the query generator use-cases have aliases to make reporting more
-# clear. This function will translate the aliased query use cases to their
-# dataset use cases. Effectively this means "for this query use case, run the
-# queries against this dataset use case".
-queries_for_dataset() {
-  case $1 in
-    iot)
-      echo window-agg group-agg bare-agg ungrouped-agg iot group-window-transpose-low-card
-      ;;
-    metaquery)
-      echo metaquery group-window-transpose-high-card
-      ;;
-    multi-measurement)
-      echo multi-measurement
-      ;;
-    *)
-      echo "unknown use-case: $1"
-      exit 1
-      ;;
-  esac
-}
-
 org_flag() {
   case $1 in
     flux-http)
@@ -259,6 +216,49 @@ bulk_data_file_loader() {
 
 }
 
+build_query_file() {
+  i=$1
+  local query_usecase="$( yq e ".query_tests[$i].use_case" "$yaml_file")"
+  local type="$( yq e ".query_tests[$i].query_type" "$yaml_file")"
+  local format="$( yq e ".query_tests[$i].format" "$yaml_file")"
+
+  local query_file="${format}_${query_usecase}_${type}"
+  local scale_var=1000
+  dry_out $GOPATH/bin/bulk_query_gen \
+    -use-case=$query_usecase \
+    -query-type=$type \
+    -format=influx-"$format" \
+    -timestamp-start="$start_time" \
+    -timestamp-end="$end_time" \
+    -queries=500 \
+    -scale-var=$scale_var > \
+    ${USECASE_DIR}/$query_file
+
+  # How long to run each set of query tests. Specify a duration to limit the maximum amount of time the queries can run,
+  # since individual queries can take a long time.
+  duration=30s
+
+  dry_out ${GOPATH}/bin/query_benchmarker_influxdb \
+    -file=${USECASE_DIR}/$query_file \
+    -urls=http://${NGINX_HOST}:8086 \
+    -debug=0 \
+    -print-interval=0 \
+    -json=true \
+    $(org_flag $format) \
+    -token=$TEST_TOKEN \
+    -workers=4 \
+    -benchmark-duration=$duration | \
+      jq '."all queries"' | \
+      jq -s '.[-1]' | \
+      jq ". += {use_case: \"$query_usecase\", query_type: \"$type\", branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", query_format: \"$format\"}" > \
+        $working_dir/test-query-$format-$query_usecase-$type.json
+
+  rm ${USECASE_DIR}/$query_file
+
+  # Restart daemon between query tests.
+  dry_out systemctl restart influxdb
+}
+
 dry_out() {
   if [[ -n "$DRY_RUN" ]] ; then
     echo "DRY RUN: $@" >&3
@@ -288,51 +288,18 @@ run_dataset() {
       ;;
   esac
 
-  # Generate queries to test.
-  query_files=""
-  for TEST_FORMAT in http flux-http ; do
-    for query_usecase in $(queries_for_dataset $test_name) ; do
-      for type in $(query_types $query_usecase) ; do
-        local query_fname="${TEST_FORMAT}_${query_usecase}_${type}"
-        local scale_var=1000
-        dry_out $GOPATH/bin/bulk_query_gen \
-            -use-case=$query_usecase \
-            -query-type=$type \
-            -format=influx-${TEST_FORMAT} \
-            -timestamp-start="$start_time" \
-            -timestamp-end="$end_time" \
-            -queries=$queries \
-            -scale-var=$scale_var > \
-          ${USECASE_DIR}/$query_fname
-        query_files="$query_files $query_fname"
-      done
-    done
-  done
-
-  # Run the query tests applicable to this dataset.
-  for query_file in $query_files; do
-    format=$(echo $query_file | cut -d '_' -f1)
-    query_usecase=$(echo $query_file | cut -d '_' -f2)
-    type=$(echo $query_file | cut -d '_' -f3)
-    local workers=4
-
-    dry_out ${GOPATH}/bin/query_benchmarker_influxdb \
-        -file=${USECASE_DIR}/$query_file \
-        -urls=http://${NGINX_HOST}:8086 \
-        -debug=0 \
-        -print-interval=0 \
-        -json=true \
-        $(org_flag $format) \
-        -token=$TEST_TOKEN \
-        -workers=$workers \
-        -benchmark-duration=$duration | \
-      jq '."all queries"' | \
-      jq -s '.[-1]' | \
-      jq ". += {use_case: \"$query_usecase\", query_type: \"$type\", branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", query_format: \"$format\"}" > \
-        $working_dir/test-query-$format-$query_usecase-$type.json
-
-      # Restart daemon between query tests.
-      dry_out systemctl restart influxdb
+  num_query_tests="$( yq e '.query_tests | length' "$yaml_file" )"
+  for (( i=0; i<$num_query_tests; i++ )) ; do
+    local query_runner="$( yq e ".query_tests[$i].type" "$yaml_file" )"
+    case "$query_runner" in
+      build_query_file)
+        build_query_file $i
+        ;;
+      *)
+        echo "ERROR: unknown data loader type $data_loader_type"
+        exit 1
+        ;;
+    esac
   done
 
   # Delete DB to start anew.
@@ -385,13 +352,6 @@ fi
 
 # Common variables used across all tests
 db_name="benchmark_db"
-
-# How many queries to generate.
-queries=500
-
-# How long to run each set of query tests. Specify a duration to limit the maximum amount of time the queries can run,
-# since individual queries can take a long time.
-duration=30s
 
 ##########################
 ## Run and record tests ##
