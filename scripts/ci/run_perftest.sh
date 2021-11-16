@@ -221,13 +221,35 @@ curl -XPOST -H "Authorization: Token ${TEST_TOKEN}" \
 
 bulk_load_influx() {
   $GOPATH/bin/bulk_load_influx "$@" | \
-    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$datestring\", i_type: \"$DATA_I_TYPE\", use_case: \"$usecase\"}" > "$working_dir/test-ingest-$usecase.json"
+    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", use_case: \"$test_name\"}" > "$working_dir/test-ingest-$test_name.json"
 
   # Cleanup from the data generation and loading.
   force_compaction
 
   # Generate a DBRP mapping for use by InfluxQL queries.
   create_dbrp
+}
+
+bulk_data_file_loader() {
+  local data_fname="influx-bulk-records-usecase-$test_name"
+  # Note -scale-var=1000 implies cardinality of 1MM
+  dry_out $GOPATH/bin/bulk_data_gen \
+      -seed=$TEST_COMMIT_TIME \
+      -use-case=$test_name \
+      -scale-var=1000 \
+      -timestamp-start="$start_time" \
+      -timestamp-end="$end_time" > \
+    ${USECASE_DIR}/$data_fname
+
+  load_opts="-file=${USECASE_DIR}/$data_fname -batch-size=5000 -workers=4 -urls=http://${NGINX_HOST}:8086 -do-abort-on-exist=false -do-db-create=true -backoff=1s -backoff-timeout=300m0s"
+  if [[ -z $INFLUXDB2 || $INFLUXDB2 = true ]] ; then
+    load_opts="$load_opts -organization=$TEST_ORG -token=$TEST_TOKEN"
+  fi
+
+  dry_out bulk_load_influx $load_opts
+
+  rm ${USECASE_DIR}/$data_fname
+
 }
 
 dry_out() {
@@ -241,36 +263,31 @@ dry_out() {
 run_dataset() {
   yaml_file="$1"
 
-  usecase="$( yq e '.name' "$yaml_file" )"
-  USECASE_DIR="${DATASET_DIR}/$usecase"
+  test_name="$( yq e '.name' "$yaml_file" )"
+  USECASE_DIR="${DATASET_DIR}/$test_name"
   mkdir "$USECASE_DIR"
 
   start_time="$( yq e '.start_time' "$yaml_file" )"
   end_time="$( yq e '.end_time' "$yaml_file" )"
-  data_fname="influx-bulk-records-usecase-$usecase"
-  dry_out $GOPATH/bin/bulk_data_gen \
-      -seed=$seed \
-      -use-case=$usecase \
-      -scale-var=$scale_var \
-      -timestamp-start="$start_time" \
-      -timestamp-end="$end_time" > \
-    ${USECASE_DIR}/$data_fname
 
-  load_opts="-file=${USECASE_DIR}/$data_fname -batch-size=$batch -workers=$workers -urls=http://${NGINX_HOST}:8086 -do-abort-on-exist=false -do-db-create=true -backoff=1s -backoff-timeout=300m0s"
-  if [[ -z $INFLUXDB2 || $INFLUXDB2 = true ]] ; then
-    load_opts="$load_opts -organization=$TEST_ORG -token=$TEST_TOKEN"
-  fi
-
-  dry_out bulk_load_influx $load_opts
-
-  rm ${USECASE_DIR}/$data_fname
+  data_loader_type="$( yq e '.data.type' "$yaml_file" )"
+  case "$data_loader_type" in
+    bulk_data_file_loader)
+      bulk_data_file_loader
+      ;;
+    *)
+      echo "ERROR: unknown data loader type $data_loader_type"
+      exit 1
+      ;;
+  esac
 
   # Generate queries to test.
   query_files=""
   for TEST_FORMAT in http flux-http ; do
-    for query_usecase in $(queries_for_dataset $usecase) ; do
+    for query_usecase in $(queries_for_dataset $test_name) ; do
       for type in $(query_types $query_usecase) ; do
-        query_fname="${TEST_FORMAT}_${query_usecase}_${type}"
+        local query_fname="${TEST_FORMAT}_${query_usecase}_${type}"
+        local scale_var=1000
         dry_out $GOPATH/bin/bulk_query_gen \
             -use-case=$query_usecase \
             -query-type=$type \
@@ -290,6 +307,7 @@ run_dataset() {
     format=$(echo $query_file | cut -d '_' -f1)
     query_usecase=$(echo $query_file | cut -d '_' -f2)
     type=$(echo $query_file | cut -d '_' -f3)
+    local workers=4
 
     dry_out ${GOPATH}/bin/query_benchmarker_influxdb \
         -file=${USECASE_DIR}/$query_file \
@@ -303,7 +321,7 @@ run_dataset() {
         -benchmark-duration=$duration | \
       jq '."all queries"' | \
       jq -s '.[-1]' | \
-      jq ". += {use_case: \"$query_usecase\", query_type: \"$type\", branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$datestring\", i_type: \"$DATA_I_TYPE\", query_format: \"$format\"}" > \
+      jq ". += {use_case: \"$query_usecase\", query_type: \"$type\", branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", query_format: \"$format\"}" > \
         $working_dir/test-query-$format-$query_usecase-$type.json
 
       # Restart daemon between query tests.
@@ -359,21 +377,10 @@ else
 fi
 
 # Common variables used across all tests
-datestring=${TEST_COMMIT_TIME}
-seed=$datestring
 db_name="benchmark_db"
-
-# Controls the cardinality of generated points. Cardinality will be scale_var * scale_var.
-scale_var=1000
 
 # How many queries to generate.
 queries=500
-
-# Lines to write per request during ingest
-batch=5000
-
-# Concurrent workers to use during ingest/query
-workers=4
 
 # How long to run each set of query tests. Specify a duration to limit the maximum amount of time the queries can run,
 # since individual queries can take a long time.
