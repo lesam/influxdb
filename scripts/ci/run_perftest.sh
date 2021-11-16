@@ -155,31 +155,6 @@ force_compaction() {
   systemctl start influxdb
 }
 
-# The time range controls both the span over which data is generated, and the
-# span over which queries will be performed. timestamp-start and timestamp-end
-# must be provided to both the data generation and query generation commands
-# and must be the same to ensure that the queries cover the data range.
-start_time() {
-  # All queries and datasets can start at the same time. Certain queries and
-  # datasets will use case-dependent end-times.
-  echo 2018-01-01T00:00:00Z
-}
-
-end_time() {
-  case $1 in
-    iot|window-agg|group-agg|bare-agg|ungrouped-agg|group-window-transpose-low-card)
-      echo 2018-01-01T12:00:00Z
-      ;;
-    multi-measurement|metaquery|group-window-transpose-high-card)
-      echo 2019-01-01T00:00:00Z
-      ;;
-    *)
-      echo "unknown use-case: $1"
-      exit 1
-      ;;
-  esac
-}
-
 query_types() {
   case $1 in
     window-agg|group-agg|bare-agg|ungrouped-agg|group-window-transpose-low-card|group-window-transpose-high-card)
@@ -265,17 +240,20 @@ dry_out() {
 
 run_dataset() {
   yaml_file="$1"
+
   usecase="$( yq e '.name' "$yaml_file" )"
-  
   USECASE_DIR="${DATASET_DIR}/$usecase"
   mkdir "$USECASE_DIR"
+
+  start_time="$( yq e '.start_time' "$yaml_file" )"
+  end_time="$( yq e '.end_time' "$yaml_file" )"
   data_fname="influx-bulk-records-usecase-$usecase"
   dry_out $GOPATH/bin/bulk_data_gen \
       -seed=$seed \
       -use-case=$usecase \
       -scale-var=$scale_var \
-      -timestamp-start=$(start_time $usecase) \
-      -timestamp-end=$(end_time $usecase) > \
+      -timestamp-start="$start_time" \
+      -timestamp-end="$end_time" > \
     ${USECASE_DIR}/$data_fname
 
   load_opts="-file=${USECASE_DIR}/$data_fname -batch-size=$batch -workers=$workers -urls=http://${NGINX_HOST}:8086 -do-abort-on-exist=false -do-db-create=true -backoff=1s -backoff-timeout=300m0s"
@@ -297,8 +275,8 @@ run_dataset() {
             -use-case=$query_usecase \
             -query-type=$type \
             -format=influx-${TEST_FORMAT} \
-            -timestamp-start=$(start_time $query_usecase) \
-            -timestamp-end=$(end_time $query_usecase) \
+            -timestamp-start="$start_time" \
+            -timestamp-end="$end_time" \
             -queries=$queries \
             -scale-var=$scale_var > \
           ${USECASE_DIR}/$query_fname
