@@ -2,6 +2,8 @@
 
 echo "Running as user: $(whoami)"
 
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
 # Source env variables
 if [[ -f /home/ubuntu/vars.sh ]] ; then
   . /home/ubuntu/vars.sh
@@ -262,6 +264,9 @@ dry_out() {
 }
 
 run_dataset() {
+  yaml_file="$1"
+  usecase="$( yq e '.name' "$yaml_file" )"
+  
   USECASE_DIR="${DATASET_DIR}/$usecase"
   mkdir "$USECASE_DIR"
   data_fname="influx-bulk-records-usecase-$usecase"
@@ -402,8 +407,8 @@ duration=30s
 
 # Generate and ingest bulk data. Record the time spent as an ingest test if
 # specified, and run the query performance tests for each dataset.
-for usecase in iot metaquery multi-measurement; do
-  run_dataset
+for file in "$SCRIPT_DIR"/perf-tests/* ; do
+  run_dataset $file
 done
 
 if [[ -z "DRY_RUN" ]] ; then
