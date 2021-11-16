@@ -219,17 +219,6 @@ curl -XPOST -H "Authorization: Token ${TEST_TOKEN}" \
   http://${NGINX_HOST}:8086/api/v2/dbrps
 }
 
-bulk_load_influx() {
-  $GOPATH/bin/bulk_load_influx "$@" | \
-    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", use_case: \"$test_name\"}" > "$working_dir/test-ingest-$test_name.json"
-
-  # Cleanup from the data generation and loading.
-  force_compaction
-
-  # Generate a DBRP mapping for use by InfluxQL queries.
-  create_dbrp
-}
-
 bulk_data_file_loader() {
   local data_fname="influx-bulk-records-usecase-$test_name"
   # Note -scale-var=1000 implies cardinality of 1MM
@@ -241,14 +230,32 @@ bulk_data_file_loader() {
       -timestamp-end="$end_time" > \
     ${USECASE_DIR}/$data_fname
 
-  load_opts="-file=${USECASE_DIR}/$data_fname -batch-size=5000 -workers=4 -urls=http://${NGINX_HOST}:8086 -do-abort-on-exist=false -do-db-create=true -backoff=1s -backoff-timeout=300m0s"
+  influxdb2_opts=
   if [[ -z $INFLUXDB2 || $INFLUXDB2 = true ]] ; then
-    load_opts="$load_opts -organization=$TEST_ORG -token=$TEST_TOKEN"
+    influxdb2_opts="-organization=$TEST_ORG -token=$TEST_TOKEN"
   fi
 
-  dry_out bulk_load_influx $load_opts
+  dry_out $GOPATH/bin/bulk_load_influx \
+    -file=${USECASE_DIR}/$data_fname \
+    -batch-size=5000 \
+    -workers=4 \
+    -urls=http://${NGINX_HOST}:8086 \
+    -do-abort-on-exist=false \
+    -do-db-create=true \
+    -backoff=1s \
+    -backoff-timeout=300m0s \
+    $influxdb2_opts | \
+    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$TEST_COMMIT_TIME\", i_type: \"$DATA_I_TYPE\", use_case: \"$test_name\"}" > "$working_dir/test-ingest-$test_name.json"
 
-  rm ${USECASE_DIR}/$data_fname
+  if [[ -z "$DRY_RUN" ]] ; then
+    # Cleanup from the data generation and loading.
+    force_compaction
+
+    # Generate a DBRP mapping for use by InfluxQL queries.
+    create_dbrp
+
+    rm ${USECASE_DIR}/$data_fname
+  fi
 
 }
 
