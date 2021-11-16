@@ -101,8 +101,7 @@ EOF
 
 install_go() {
   # install golang latest version
-  go_version=$(curl https://golang.org/VERSION?m=text)
-  go_endpoint="$go_version.linux-amd64.tar.gz"
+  go_endpoint="go1.17.3.linux-amd64.tar.gz"
 
   wget "https://dl.google.com/go/$go_endpoint" -O "$working_dir/$go_endpoint"
   rm -rf /usr/local/go
@@ -118,13 +117,15 @@ install_go() {
   go version
 }
 
-install_influxdb_comparisons() {
+install_go_bins() {
   # install influxdb-comparisons cmds
   go get \
     github.com/influxdata/influxdb-comparisons/cmd/bulk_data_gen \
     github.com/influxdata/influxdb-comparisons/cmd/bulk_load_influx \
     github.com/influxdata/influxdb-comparisons/cmd/bulk_query_gen \
     github.com/influxdata/influxdb-comparisons/cmd/query_benchmarker_influxdb
+  # install yq
+  go get github.com/mikefarah/yq/v4
 }
 
 # Helper functions containing common logic
@@ -310,7 +311,7 @@ mount -t tmpfs -o size=32G tmpfs "$DATASET_DIR"
 install_influxdb
 install_telegraf
 install_go
-install_influxdb_comparisons
+install_go_bins
 
 # Common variables used across all tests
 db_name="benchmark_db"
