@@ -1,45 +1,45 @@
-#!/usr/bin/sh -ex
+#!/bin/bash -ex
 
 echo "Running as user: $(whoami)"
 
 # Source env variables
-. /home/ubuntu/vars.sh
-
-# Install influxdb
-DEBIAN_FRONTEND=noninteractive apt-get install --assume-yes /home/ubuntu/influxdb2*amd64.deb
-systemctl start influxdb
-DATASET_DIR=/mnt/ramdisk
-mkdir -p "$DATASET_DIR"
-mount -t tmpfs -o size=32G tmpfs "$DATASET_DIR"
-
-# set up influxdb
-export INFLUXDB2=true
-export TEST_ORG=example_org
-export TEST_TOKEN=token
-result="$(curl -s -o /dev/null -H "Content-Type: application/json" -XPOST -d '{"username": "default", "password": "thisisnotused", "retentionPeriodSeconds": 0, "org": "'"$TEST_ORG"'", "bucket": "unused_bucket", "token": "'"$TEST_TOKEN"'"}' http://localhost:8086/api/v2/setup -w %{http_code})"
-if [ "$result" != "201" ] ; then
-  echo "Influxdb2 failed to setup correctly"
-  exit 1
+if [[ -f /home/ubuntu/vars.sh ]] ; then
+  . /home/ubuntu/vars.sh
 fi
 
+install_influxdb() {
+  # Install influxdb
+  DEBIAN_FRONTEND=noninteractive apt-get install --assume-yes /home/ubuntu/influxdb2*amd64.deb
+  systemctl start influxdb
 
-# Install Telegraf
-wget -qO- https://repos.influxdata.com/influxdb.key | apt-key add -
-echo "deb https://repos.influxdata.com/ubuntu focal stable" | tee /etc/apt/sources.list.d/influxdb.list
+  # set up influxdb
+  export INFLUXDB2=true
+  export TEST_ORG=example_org
+  export TEST_TOKEN=token
+  result="$(curl -s -o /dev/null -H "Content-Type: application/json" -XPOST -d '{"username": "default", "password": "thisisnotused", "retentionPeriodSeconds": 0, "org": "'"$TEST_ORG"'", "bucket": "unused_bucket", "token": "'"$TEST_TOKEN"'"}' http://localhost:8086/api/v2/setup -w %{http_code})"
+  if [[ "$result" != "201" ]] ; then
+    echo "Influxdb2 failed to setup correctly"
+    exit 1
+  fi
+}
 
-DEBIAN_FRONTEND=noninteractive apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y git jq telegraf awscli
+install_telegraf() {
+  # Install Telegraf
+  wget -qO- https://repos.influxdata.com/influxdb.key | apt-key add -
+  echo "deb https://repos.influxdata.com/ubuntu focal stable" | tee /etc/apt/sources.list.d/influxdb.list
 
-# Install influx_tools
-aws --region us-west-2 s3 cp s3://perftest-binaries-influxdb/influx_tools/influx_tools-d3be25b251256755d622792ec91826c5670c6106 ./influx_tools
-mv ./influx_tools /usr/bin/influx_tools
-chmod 755 /usr/bin/influx_tools
+  DEBIAN_FRONTEND=noninteractive apt-get update
+  DEBIAN_FRONTEND=noninteractive apt-get install -y git jq telegraf awscli
 
-root_branch="$(echo "${INFLUXDB_VERSION}" | rev | cut -d '-' -f1 | rev)"
-log_date=$(date +%Y%m%d%H%M%S)
+  # Install influx_tools
+  aws --region us-west-2 s3 cp s3://perftest-binaries-influxdb/influx_tools/influx_tools-d3be25b251256755d622792ec91826c5670c6106 ./influx_tools
+  mv ./influx_tools /usr/bin/influx_tools
+  chmod 755 /usr/bin/influx_tools
 
-working_dir=$(mktemp -d)
-mkdir -p /etc/telegraf
+  root_branch="$(echo "${INFLUXDB_VERSION}" | rev | cut -d '-' -f1 | rev)"
+  log_date=$(date +%Y%m%d%H%M%S)
+
+  mkdir -p /etc/telegraf
 cat << EOF > /etc/telegraf/telegraf.conf
 [[outputs.influxdb_v2]]
   urls = ["https://us-west-2-1.aws.cloud2.influxdata.com"]
@@ -93,60 +93,44 @@ cat << EOF > /etc/telegraf/telegraf.conf
     "branch"
   ]
 EOF
-systemctl restart telegraf
+  systemctl restart telegraf
+}
 
-cd $working_dir
 
-# install golang latest version
-go_version=$(curl https://golang.org/VERSION?m=text)
-go_endpoint="$go_version.linux-amd64.tar.gz"
+install_go() {
+  # install golang latest version
+  go_version=$(curl https://golang.org/VERSION?m=text)
+  go_endpoint="$go_version.linux-amd64.tar.gz"
 
-wget "https://dl.google.com/go/$go_endpoint" -O "$working_dir/$go_endpoint"
-rm -rf /usr/local/go
-tar -C /usr/local -xzf "$working_dir/$go_endpoint"
+  wget "https://dl.google.com/go/$go_endpoint" -O "$working_dir/$go_endpoint"
+  rm -rf /usr/local/go
+  tar -C /usr/local -xzf "$working_dir/$go_endpoint"
 
-# set env variables necessary for go to work during cloud-init
-if [ `whoami` = root ]; then
-  mkdir -p /root/go/bin
-  export HOME=/root
-  export GOPATH=/root/go
-  export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
-fi
-go version
+  # set env variables necessary for go to work during cloud-init
+  if [[ `whoami` = root ]] ; then
+    mkdir -p /root/go/bin
+    export HOME=/root
+    export GOPATH=/root/go
+    export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin
+  fi
+  go version
+}
 
-# install influxdb-comparisons cmds
-go get \
-  github.com/influxdata/influxdb-comparisons/cmd/bulk_data_gen \
-  github.com/influxdata/influxdb-comparisons/cmd/bulk_load_influx \
-  github.com/influxdata/influxdb-comparisons/cmd/bulk_query_gen \
-  github.com/influxdata/influxdb-comparisons/cmd/query_benchmarker_influxdb
-
-# Common variables used across all tests
-datestring=${TEST_COMMIT_TIME}
-seed=$datestring
-db_name="benchmark_db"
-
-# Controls the cardinality of generated points. Cardinality will be scale_var * scale_var.
-scale_var=1000
-
-# How many queries to generate.
-queries=500
-
-# Lines to write per request during ingest
-batch=5000
-
-# Concurrent workers to use during ingest/query
-workers=4
-
-# How long to run each set of query tests. Specify a duration to limit the maximum amount of time the queries can run,
-# since individual queries can take a long time.
-duration=30s
+install_influxdb_comparisons() {
+  # install influxdb-comparisons cmds
+  go get \
+    github.com/influxdata/influxdb-comparisons/cmd/bulk_data_gen \
+    github.com/influxdata/influxdb-comparisons/cmd/bulk_load_influx \
+    github.com/influxdata/influxdb-comparisons/cmd/bulk_query_gen \
+    github.com/influxdata/influxdb-comparisons/cmd/query_benchmarker_influxdb
+}
 
 # Helper functions containing common logic
 bucket_id() {
   bucket_id=$(curl -H "Authorization: Token $TEST_TOKEN" "http://${NGINX_HOST}:8086/api/v2/buckets?org=$TEST_ORG" | jq -r ".buckets[] | select(.name | contains(\"$db_name\")).id")
   echo $bucket_id
 }
+
 
 force_compaction() {
   # id of the bucket that will be compacted
@@ -159,7 +143,7 @@ force_compaction() {
 
   set -e
   for shard in $shards; do
-    if [ -n "$(find $shard -name *.tsm)" ]; then
+    if [[ -n "$(find $shard -name *.tsm)" ]]; then
       # compact as the influxdb user in order to keep file permissions correct
       sudo -u influxdb influx_tools compact-shard -force -verbose -path $shard
     fi
@@ -258,17 +242,30 @@ curl -XPOST -H "Authorization: Token ${TEST_TOKEN}" \
   http://${NGINX_HOST}:8086/api/v2/dbrps
 }
 
-##########################
-## Run and record tests ##
-##########################
+bulk_load_influx() {
+  $GOPATH/bin/bulk_load_influx "$@" | \
+    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$datestring\", i_type: \"$DATA_I_TYPE\", use_case: \"$usecase\"}" > "$working_dir/test-ingest-$usecase.json"
 
-# Generate and ingest bulk data. Record the time spent as an ingest test if
-# specified, and run the query performance tests for each dataset.
-for usecase in iot metaquery multi-measurement; do
+  # Cleanup from the data generation and loading.
+  force_compaction
+
+  # Generate a DBRP mapping for use by InfluxQL queries.
+  create_dbrp
+}
+
+dry_out() {
+  if [[ -n "$DRY_RUN" ]] ; then
+    echo "DRY RUN: $@" >&3
+  else
+    "$@"
+  fi
+}
+
+run_dataset() {
   USECASE_DIR="${DATASET_DIR}/$usecase"
   mkdir "$USECASE_DIR"
   data_fname="influx-bulk-records-usecase-$usecase"
-  $GOPATH/bin/bulk_data_gen \
+  dry_out $GOPATH/bin/bulk_data_gen \
       -seed=$seed \
       -use-case=$usecase \
       -scale-var=$scale_var \
@@ -277,19 +274,13 @@ for usecase in iot metaquery multi-measurement; do
     ${USECASE_DIR}/$data_fname
 
   load_opts="-file=${USECASE_DIR}/$data_fname -batch-size=$batch -workers=$workers -urls=http://${NGINX_HOST}:8086 -do-abort-on-exist=false -do-db-create=true -backoff=1s -backoff-timeout=300m0s"
-  if [ -z $INFLUXDB2 ] || [ $INFLUXDB2 = true ]; then
+  if [[ -z $INFLUXDB2 || $INFLUXDB2 = true ]] ; then
     load_opts="$load_opts -organization=$TEST_ORG -token=$TEST_TOKEN"
   fi
 
-  $GOPATH/bin/bulk_load_influx $load_opts | \
-    jq ". += {branch: \"$INFLUXDB_VERSION\", commit: \"$TEST_COMMIT\", time: \"$datestring\", i_type: \"$DATA_I_TYPE\", use_case: \"$usecase\"}" > "$working_dir/test-ingest-$usecase.json"
+  dry_out bulk_load_influx $load_opts
 
-  # Cleanup from the data generation and loading.
-  force_compaction
   rm ${USECASE_DIR}/$data_fname
-
-  # Generate a DBRP mapping for use by InfluxQL queries.
-  create_dbrp
 
   # Generate queries to test.
   query_files=""
@@ -297,7 +288,7 @@ for usecase in iot metaquery multi-measurement; do
     for query_usecase in $(queries_for_dataset $usecase) ; do
       for type in $(query_types $query_usecase) ; do
         query_fname="${TEST_FORMAT}_${query_usecase}_${type}"
-        $GOPATH/bin/bulk_query_gen \
+        dry_out $GOPATH/bin/bulk_query_gen \
             -use-case=$query_usecase \
             -query-type=$type \
             -format=influx-${TEST_FORMAT} \
@@ -317,7 +308,7 @@ for usecase in iot metaquery multi-measurement; do
     query_usecase=$(echo $query_file | cut -d '_' -f2)
     type=$(echo $query_file | cut -d '_' -f3)
 
-    ${GOPATH}/bin/query_benchmarker_influxdb \
+    dry_out ${GOPATH}/bin/query_benchmarker_influxdb \
         -file=${USECASE_DIR}/$query_file \
         -urls=http://${NGINX_HOST}:8086 \
         -debug=0 \
@@ -333,18 +324,98 @@ for usecase in iot metaquery multi-measurement; do
         $working_dir/test-query-$format-$query_usecase-$type.json
 
       # Restart daemon between query tests.
-      systemctl restart influxdb
+      dry_out systemctl restart influxdb
   done
 
   # Delete DB to start anew.
-  curl -X DELETE -H "Authorization: Token ${TEST_TOKEN}" http://${NGINX_HOST}:8086/api/v2/buckets/$(bucket_id)
+  dry_out curl -X DELETE -H "Authorization: Token ${TEST_TOKEN}" http://${NGINX_HOST}:8086/api/v2/buckets/$(bucket_id)
   rm -rf "$USECASE_DIR"
+}
+
+
+##########################
+## Setup for perf tests ##
+##########################
+
+DRY_RUN=
+while true; do
+  case $1 in
+    -d | --dry-run )
+      DRY_RUN=true
+      shift
+      ;;
+    *)
+      break ;;
+  esac
 done
 
-echo "Using Telegraph to report results from the following files:"
-ls $working_dir
-if [ "${TEST_RECORD_RESULTS}" = "true" ] ; then
-  telegraf --debug --once
+working_dir=$(mktemp -d)
+
+if [[ -z "DRY_RUN" ]] ; then
+  DATASET_DIR=/mnt/ramdisk
+  mkdir -p "$DATASET_DIR"
+  mount -t tmpfs -o size=32G tmpfs "$DATASET_DIR"
+
+  install_influxdb
+  install_telegraf
+  install_go
+  install_influxdb_comparisons
 else
-  telegraf --debug --test
+  # The intention of the dry run is to be able to run something like the following command:
+  #
+  # TEST_TOKEN=mytoken NGINX_HOST=somehost TEST_ORG=foo GOPATH=/go/path ./scripts/ci/run_perftest.sh -d 2>/dev/null
+  #
+  # And have a repeatable output to test script refactoring quickly
+
+  tmpdir="$(dirname "$working_dir")"
+  DATASET_DIR="$tmpdir/perftest_dataset_dir"
+  working_dir="$tmpdir/perftest_working_dir"
+  mkdir "$DATASET_DIR"
+  mkdir "$working_dir"
+  exec 3>&1
+fi
+
+# Common variables used across all tests
+datestring=${TEST_COMMIT_TIME}
+seed=$datestring
+db_name="benchmark_db"
+
+# Controls the cardinality of generated points. Cardinality will be scale_var * scale_var.
+scale_var=1000
+
+# How many queries to generate.
+queries=500
+
+# Lines to write per request during ingest
+batch=5000
+
+# Concurrent workers to use during ingest/query
+workers=4
+
+# How long to run each set of query tests. Specify a duration to limit the maximum amount of time the queries can run,
+# since individual queries can take a long time.
+duration=30s
+
+##########################
+## Run and record tests ##
+##########################
+
+# Generate and ingest bulk data. Record the time spent as an ingest test if
+# specified, and run the query performance tests for each dataset.
+for usecase in iot metaquery multi-measurement; do
+  run_dataset
+done
+
+if [[ -z "DRY_RUN" ]] ; then
+  echo "Using Telegraph to report results from the following files:"
+  ls $working_dir
+  if [[ "${TEST_RECORD_RESULTS}" = "true" ]] ; then
+    telegraf --debug --once
+  else
+    telegraf --debug --test
+  fi
+else
+  # For the dry run we pick deterministic names for the directories, so delete them
+  rm -rf "$DATASET_DIR"
+  rm -rf "$working_dir"
 fi
