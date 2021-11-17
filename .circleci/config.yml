@@ -103,15 +103,13 @@ workflows:
           requires:
             - package-snapshot
       - perf-test:
-          #FIXME: set to true
-          record_results: false
+          record_results: true
           requires:
             - package-snapshot
-          # FIXME-uncomment
-          # filters:
-          #   branches:
-          #     only:
-          #       - master
+          filters:
+            branches:
+              only:
+                - master
       - grace-test:
           requires:
             - build-snapshot-linux-amd64
