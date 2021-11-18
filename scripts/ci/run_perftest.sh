@@ -98,7 +98,6 @@ EOF
   systemctl restart telegraf
 }
 
-
 install_go() {
   # install golang latest version
   go_endpoint="go1.17.3.linux-amd64.tar.gz"
@@ -133,7 +132,6 @@ bucket_id() {
   bucket_id=$(curl -H "Authorization: Token $TEST_TOKEN" "http://${NGINX_HOST}:8086/api/v2/buckets?org=$TEST_ORG" | jq -r ".buckets[] | select(.name | contains(\"$db_name\")).id")
   echo $bucket_id
 }
-
 
 force_compaction() {
   # id of the bucket that will be compacted
@@ -179,7 +177,6 @@ curl -XPOST -H "Authorization: Token ${TEST_TOKEN}" \
 
 bulk_data_file_loader() {
   local data_fname="influx-bulk-records-usecase-$test_name"
-  # Note -scale-var=1000 implies cardinality of 1MM
   $GOPATH/bin/bulk_data_gen \
       -seed=$TEST_COMMIT_TIME \
       -use-case=$test_name \
@@ -296,7 +293,6 @@ run_dataset() {
   curl -X DELETE -H "Authorization: Token ${TEST_TOKEN}" http://${NGINX_HOST}:8086/api/v2/buckets/$(bucket_id)
   rm -rf "$USECASE_DIR"
 }
-
 
 ##########################
 ## Setup for perf tests ##
